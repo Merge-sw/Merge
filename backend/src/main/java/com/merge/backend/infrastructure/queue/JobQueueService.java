@@ -35,9 +35,8 @@ public class JobQueueService {
         push(MAIN_QUEUE_KEY, job);
     }
 
-    /** Re-queues a failed job after exponential backoff delay (milliseconds). */
+    /** Re-queues a failed job after exponential backoff delay (milliseconds). Caller must have already incremented attemptCount. */
     public void scheduleRetry(JobPayload job, long delayMs) {
-        job.setAttemptCount(job.getAttemptCount() + 1);
         double score = Instant.now().toEpochMilli() + delayMs;
         try {
             redis.opsForZSet().add(RETRY_ZSET_KEY, objectMapper.writeValueAsString(job), score);

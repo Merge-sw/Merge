@@ -3,6 +3,9 @@ package com.merge.backend.scout.controller;
 import com.merge.backend.scout.dto.Layer1QuestionsResponse;
 import com.merge.backend.scout.dto.Layer1SubmitRequest;
 import com.merge.backend.scout.dto.Layer1SubmitResponse;
+import com.merge.backend.scout.dto.Layer2ProblemsResponse;
+import com.merge.backend.scout.dto.Layer2SubmitRequest;
+import com.merge.backend.scout.dto.Layer2SubmitResponse;
 import com.merge.backend.scout.service.AlreadySubmittedException;
 import com.merge.backend.scout.service.ScoutService;
 import jakarta.validation.Valid;
@@ -44,6 +47,28 @@ public class ScoutController {
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody Layer1SubmitRequest request) {
         Layer1SubmitResponse response = scoutService.submitLayer1(userDetails.getUsername(), request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    /**
+     * SC-02: GET /api/v1/scout/layer-2
+     * Returns the 4 conceptual problems. No coding — pure thinking and reasoning.
+     */
+    @GetMapping("/layer-2")
+    public ResponseEntity<Layer2ProblemsResponse> getLayer2Problems() {
+        return ResponseEntity.ok(scoutService.getLayer2Problems());
+    }
+
+    /**
+     * SC-02: POST /api/v1/scout/layer-2/submit
+     * Persists results to scout_assessments.layer2_results (JSONB).
+     * Requires Layer 1 to already be submitted. One submission per student.
+     */
+    @PostMapping("/layer-2/submit")
+    public ResponseEntity<Layer2SubmitResponse> submitLayer2(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody Layer2SubmitRequest request) {
+        Layer2SubmitResponse response = scoutService.submitLayer2(userDetails.getUsername(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

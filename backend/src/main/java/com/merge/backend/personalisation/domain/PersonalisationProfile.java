@@ -53,4 +53,14 @@ public class PersonalisationProfile {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    /**
+     * pgvector embedding written by AI-06.
+     * Stored as vector(768) — requires the pgvector extension on PostgreSQL.
+     * Hibernate does not manage this column's type; ensure `CREATE EXTENSION vector`
+     * is run once and the column is created via migration before first use.
+     * Java representation: JSON-array string e.g. "[0.1,0.2,...]".
+     */
+    @Column(name = "embedding", columnDefinition = "vector(768)")
+    private String embedding;
 }

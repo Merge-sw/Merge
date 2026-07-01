@@ -51,6 +51,23 @@ public class PersonalisationProfile {
     @Column(name = "coding_style_patterns", columnDefinition = "jsonb")
     private Map<String, Object> codingStylePatterns;
 
+    /** Derived from Scout Layer 1 responses at scout completion — never updated by AI. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "thinking_style")
+    private ThinkingStyle thinkingStyle;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "motivation_type")
+    private MotivationType motivationType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "prior_exposure")
+    private PriorExposure priorExposure;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "learning_approach")
+    private LearningApproach learningApproach;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 

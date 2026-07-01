@@ -31,6 +31,13 @@ public class ScoutAssessment {
     @Column(name = "submitted_at", nullable = false, updatable = false)
     private Instant submittedAt;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "layer2_results", columnDefinition = "jsonb")
+    private Map<String, String> layer2Results;
+
+    @Column(name = "layer2_submitted_at")
+    private Instant layer2SubmittedAt;
+
     @PrePersist
     void onPersist() {
         submittedAt = Instant.now();

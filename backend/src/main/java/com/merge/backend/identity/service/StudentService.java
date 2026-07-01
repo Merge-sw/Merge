@@ -1,11 +1,12 @@
 package com.merge.backend.identity.service;
 
-import com.merge.backend.identity.domain.Student;
-import java.util.Optional;
+import com.merge.backend.identity.dto.*;
 
 public interface StudentService {
-    Student registerStudent(Student student);
-    Optional<Student> getStudentById(Long id);
-    Optional<Student> getStudentByEmail(String email);
-    Student updateStudentProfile(Long id, Student studentDetails);
+    AuthResponse register(RegisterRequest request);
+    AuthResponse login(LoginRequest request);
+    AuthResponse refresh(String refreshToken);
+    void logout(String accessToken);
+    StudentResponse getProfile(String email);
+    StudentResponse updateProfile(String email, UpdateProfileRequest request);
 }

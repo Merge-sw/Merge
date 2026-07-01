@@ -25,17 +25,23 @@ public class Student {
     @Column(nullable = false)
     private String phone;
 
-    @Column(name = "university_email", nullable = false)
+    @Column(name = "university_email", nullable = false, unique = true)
     private String universityEmail;
 
+    @Column(name = "password_hash", nullable = false)
+    private String passwordHash;
+
     @Column(name = "current_stage", nullable = false)
-    private String currentStage; // SCOUT, CADET, ENGINEER, ARCHITECT, PRINCIPAL
+    private String currentStage;
 
     @Column(name = "total_xp", nullable = false)
     private Integer totalXp = 0;
 
     @Column(name = "github_oauth_token_encrypted")
     private String githubOauthTokenEncrypted;
+
+    @Column(name = "github_portfolio_repo")
+    private String githubPortfolioRepo;
 
     @Column(name = "gemini_token_encrypted")
     private String geminiTokenEncrypted;

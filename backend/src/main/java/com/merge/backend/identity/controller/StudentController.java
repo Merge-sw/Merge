@@ -1,9 +1,12 @@
 package com.merge.backend.identity.controller;
 
-import com.merge.backend.identity.domain.Student;
+import com.merge.backend.identity.dto.StudentResponse;
+import com.merge.backend.identity.dto.UpdateProfileRequest;
 import com.merge.backend.identity.service.StudentService;
-import org.springframework.http.HttpStatus;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,25 +19,28 @@ public class StudentController {
         this.studentService = studentService;
     }
 
-    @PostMapping("/register")
-    public ResponseEntity<Student> registerStudent(@RequestBody Student student) {
-        Student registered = studentService.registerStudent(student);
-        return new ResponseEntity<>(registered, HttpStatus.CREATED);
-    }
-
+    /**
+     * ID-04: GET /api/v1/students/me
+     * Returns full student record for the authenticated student.
+     * Requires valid JWT.
+     */
     @GetMapping("/me")
-    public ResponseEntity<Student> getOwnProfile() {
-        // TODO: Integrate with security context to get logged-in student info
-        // Dummy return for skeleton purposes
-        return studentService.getStudentById(1L)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<StudentResponse> getOwnProfile(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        StudentResponse profile = studentService.getProfile(userDetails.getUsername());
+        return ResponseEntity.ok(profile);
     }
 
+    /**
+     * ID-04: PUT /api/v1/students/me
+     * Updates name and phone for the authenticated student.
+     * Requires valid JWT.
+     */
     @PutMapping("/me")
-    public ResponseEntity<Student> updateProfile(@RequestBody Student studentDetails) {
-        // TODO: Integrate with security context to get logged-in student info
-        Student updated = studentService.updateStudentProfile(1L, studentDetails);
+    public ResponseEntity<StudentResponse> updateProfile(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody UpdateProfileRequest request) {
+        StudentResponse updated = studentService.updateProfile(userDetails.getUsername(), request);
         return ResponseEntity.ok(updated);
     }
 }

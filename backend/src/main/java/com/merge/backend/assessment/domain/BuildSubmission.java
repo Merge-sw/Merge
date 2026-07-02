@@ -131,6 +131,9 @@ public class BuildSubmission {
     @Column(name = "xp_awarded")
     private Integer xpAwarded;
 
+    @Column(name = "commit_hash", length = 40)
+    private String commitHash;
+
     @Column(name = "submitted_at", nullable = false)
     private Instant submittedAt;
 }

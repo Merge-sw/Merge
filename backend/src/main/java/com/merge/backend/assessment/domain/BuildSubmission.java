@@ -120,6 +120,13 @@ public class BuildSubmission {
     @Column(name = "gate5_passed")
     private Boolean gate5Passed;
 
+    /**
+     * Pass tier achieved: MINIMUM (gates 1+2), STANDARD (gates 1–4), or DISTINCTION (all 5).
+     * Null until XP is awarded. Determines the base XP amount before attempt decay.
+     */
+    @Column(name = "tier", length = 15)
+    private String tier;
+
     /** Populated once all gates pass and XP has been awarded via ProgressionService. */
     @Column(name = "xp_awarded")
     private Integer xpAwarded;

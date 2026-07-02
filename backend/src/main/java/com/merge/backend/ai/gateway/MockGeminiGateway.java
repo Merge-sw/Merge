@@ -18,7 +18,7 @@ public class MockGeminiGateway implements GeminiGateway {
         return new PersonalisationAiResult(
                 Collections.emptyList(),
                 Collections.emptyList(),
-                ScaffoldingLevel.DYNAMIC_SCAFFOLD,
+                ScaffoldingLevel.MEDIUM,
                 Collections.emptyMap()
         );
     }
@@ -91,4 +91,11 @@ public class MockGeminiGateway implements GeminiGateway {
         return String.format("Hi %s. It looks like you've been inactive or blocked on %s recently. " +
                 "Let's get back on track! Reach out if you need hints.", studentName, lastActiveConcept);
     }
+
+    @Override
+    public String generateAudioScript(String conceptName, String audioType, String learningApproach, List<String> weakConcepts) {
+        return String.format("Welcome to this %s audiocast on %s. Tailored to your %s approach. Keep learning!",
+                audioType, conceptName, learningApproach);
+    }
 }
+

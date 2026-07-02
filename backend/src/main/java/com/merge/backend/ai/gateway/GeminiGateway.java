@@ -4,6 +4,7 @@ import com.merge.backend.assessment.dto.BuildArchitectureReviewRequest;
 import com.merge.backend.assessment.dto.BuildCleanCodeReviewRequest;
 import com.merge.backend.assessment.dto.BuildCompetencySignalRequest;
 import com.merge.backend.assessment.dto.BuildTestQualityRequest;
+import com.merge.backend.assessment.dto.CleanCodeReviewResult;
 import com.merge.backend.assessment.dto.ComprehensionQuestion;
 import com.merge.backend.assessment.dto.ComprehensionQuestionsRequest;
 import com.merge.backend.assessment.dto.ComprehensionScoreRequest;
@@ -76,13 +77,13 @@ public interface GeminiGateway {
     boolean reviewBuildArchitecture(BuildArchitectureReviewRequest request);
 
     /**
-     * AI-07 — Build Gate 3: evaluates code quality calibrated to the stage's clean-code level
-     * (NAMING_ONLY → NAMING_SIZE_REDUNDANCY → FULL_SOLID → HUMAN_REVIEW).
-     * Only violations appropriate for the stage are penalised.
-     *
-     * @return true if the code meets the stage's clean-code standard; false otherwise
+     * AI-07 — CleanCodeReviewer prompt: scores the student's code against the
+     * stage-appropriate rubric (NAMING_ONLY → NAMING_SIZE_REDUNDANCY → FULL_SOLID).
+     * Only violations relevant to the stage level are penalised.
+     * Returns a 0–100 score and dimension-specific feedback.
+     * Caller compares score against Stage.cleanCodeMinScore to determine pass/fail.
      */
-    boolean reviewBuildCleanCode(BuildCleanCodeReviewRequest request);
+    CleanCodeReviewResult reviewBuildCleanCode(BuildCleanCodeReviewRequest request);
 
     /**
      * AI-08 — Build Gate 4: evaluates the student's test suite for coverage,

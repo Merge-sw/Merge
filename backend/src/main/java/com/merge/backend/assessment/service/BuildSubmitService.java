@@ -81,6 +81,9 @@ public class BuildSubmitService {
         if (build.getPrd() == null) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Build PRD is still generating");
         }
+        if (build.getHiddenTestSuite() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Build hidden tests are not yet available");
+        }
 
         Stage stage = stageRepository.findById(build.getStageName())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
@@ -108,10 +111,12 @@ public class BuildSubmitService {
 
         runGates(submission, gateResults, build, stage, request);
 
-        boolean allPassed = gateResults.stream()
+        boolean allGatesPassed = gateResults.stream()
                 .allMatch(g -> g.getStatus() == BuildGateStatus.PASSED);
 
-        if (allPassed) {
+        // Gate 1 is a hard blocker: XP is never awarded unless hidden-test execution passed,
+        // regardless of other gates' outcomes.
+        if (Boolean.TRUE.equals(submission.getGate1Passed()) && allGatesPassed) {
             submission.setOverallStatus(BuildSubmissionStatus.PASSED);
             int awarded = progressionService.awardXp(student, pendingXp, ActivityType.BUILD_PASS,
                     build.getStageName(), buildId);
@@ -131,19 +136,24 @@ public class BuildSubmitService {
     private void runGates(BuildSubmission submission, List<BuildGateResult> gateResults,
                           Build build, Stage stage, BuildSubmitRequest request) {
 
-        // Gate 1 — Judge0 (functionality)
+        // Gate 1 — Judge0 against hidden test suite (same config as Drill execution).
+        // Hidden test content is NEVER included in any feedback returned to the student.
         BuildGateResult judge0Result = findGate(gateResults, BuildGate.JUDGE0);
+        boolean gate1Passed = false;
         try {
-            Judge0Outcome outcome = judge0ExecutionService.execute(request.code(), request.testSuite());
-            if (outcome.testsPassed()) {
+            Judge0Outcome outcome = judge0ExecutionService.execute(request.code(), build.getHiddenTestSuite());
+            gate1Passed = outcome.testsPassed();
+            if (gate1Passed) {
                 markPassed(judge0Result, null);
             } else {
-                markFailed(judge0Result, outcome.stderr() != null ? outcome.stderr() : "Tests failed");
+                markFailed(judge0Result, hiddenTestFeedback(outcome));
             }
         } catch (Exception e) {
             log.warn("Judge0 gate threw exception for submission {}: {}", submission.getId(), e.getMessage());
-            markFailed(judge0Result, "Code execution failed: " + e.getMessage());
+            markFailed(judge0Result, "Code execution failed");
         }
+        submission.setGate1Passed(gate1Passed);
+        buildSubmissionRepository.saveAndFlush(submission);
 
         // Gate 2 — Architecture review
         BuildGateResult archResult = findGate(gateResults, BuildGate.ARCHITECTURE);
@@ -247,6 +257,20 @@ public class BuildSubmitService {
         result.setStatus(BuildGateStatus.FAILED);
         result.setFeedback(feedback);
         result.setEvaluatedAt(Instant.now());
+    }
+
+    /**
+     * Maps a Judge0 failure outcome to student-facing feedback without revealing hidden test content.
+     * Status 4 (wrong answer) is intentionally vague — test cases must remain hidden.
+     * Compile and runtime errors reference the student's own code, so stderr is safe to show.
+     */
+    private String hiddenTestFeedback(Judge0Outcome outcome) {
+        return switch (outcome.statusId()) {
+            case 4 -> "Your code did not pass the hidden test suite";
+            case 5 -> "Code execution timed out against the hidden test suite";
+            case 6 -> "Compilation error" + (outcome.stderr() != null ? ": " + outcome.stderr() : "");
+            default -> "Runtime error" + (outcome.stderr() != null ? ": " + outcome.stderr() : "");
+        };
     }
 
     private int calculatePendingXp(int attemptNumber) {

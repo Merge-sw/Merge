@@ -84,6 +84,22 @@ public class BuildSubmission {
     @Column(name = "gate2_passed")
     private Boolean gate2Passed;
 
+    /**
+     * Whether Gate 3 (AI-07 CleanCodeReviewer) passed.
+     * Pass condition: overallScore >= Stage.cleanCodeMinScore.
+     * Null until Gate 3 has been evaluated for this submission.
+     */
+    @Column(name = "gate3_passed")
+    private Boolean gate3Passed;
+
+    /**
+     * Numeric clean-code score returned by AI-07 (0–100).
+     * Recorded for the student to see their exact score and the gap to the threshold.
+     * Null until Gate 3 has been evaluated for this submission.
+     */
+    @Column(name = "overall_score")
+    private Integer overallScore;
+
     /** Populated once all gates pass and XP has been awarded via ProgressionService. */
     @Column(name = "xp_awarded")
     private Integer xpAwarded;

@@ -179,10 +179,11 @@ public class BuildComprehensionSubmitService {
             boolean comprehensionPassed) {
 
         int xp = progressionService.awardXp(student.getId(),
-                tier.computeXp(submission.getAttemptNumber()),
+                tier.baseXp,
                 ActivityType.BUILD_PASS,
                 submission.getBuild().getStageName(),
-                submission.getBuild().getId()).awarded();
+                submission.getBuild().getId(),
+                ProgressionService.decayRate(submission.getAttemptNumber())).awarded();
 
         submission.setTier(tier.name());
         submission.setXpAwarded(xp);

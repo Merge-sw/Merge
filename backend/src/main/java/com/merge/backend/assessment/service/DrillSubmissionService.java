@@ -98,6 +98,9 @@ public class DrillSubmissionService {
 
         assertUnlocked(student, drill);
 
+        int previousAttempts = submissionRepository.countByStudentIdAndDrillId(student.getId(), drillId);
+        int attemptNumber = previousAttempts + 1;
+
         DrillSubmission submission = new DrillSubmission();
         submission.setStudent(student);
         submission.setDrill(drill);
@@ -105,6 +108,7 @@ public class DrillSubmissionService {
         submission.setTestSuite(req.testSuite());
         submission.setArchitectureDataLayout(req.architectureAnswers().dataLayout());
         submission.setArchitectureAlgorithmTradeoffs(req.architectureAnswers().algorithmTradeoffs());
+        submission.setAttemptNumber(attemptNumber);
         submission.setIdempotencyKey(req.idempotencyKey());
         submission.setStatus(DrillSubmissionStatus.PENDING);
         submission.setSubmittedAt(Instant.now());

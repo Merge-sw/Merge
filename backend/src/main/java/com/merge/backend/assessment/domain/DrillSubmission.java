@@ -57,6 +57,13 @@ public class DrillSubmission {
     private String architectureAlgorithmTradeoffs;
 
     /**
+     * 1-based count of how many times this student has attempted this drill.
+     * Drives XP decay: 1st=100%, 2nd=75%, 3rd=50%, 4th+=25%.
+     */
+    @Column(name = "attempt_number", nullable = false, columnDefinition = "int default 1")
+    private int attemptNumber;
+
+    /**
      * Client-generated UUID preventing duplicate submissions on network retries.
      * UNIQUE constraint enforces exactly-once processing at the database level.
      */

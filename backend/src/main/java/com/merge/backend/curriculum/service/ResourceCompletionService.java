@@ -63,6 +63,7 @@ public class ResourceCompletionService {
                 RESOURCE_XP,
                 ActivityType.LEARNING_RESOURCE,
                 student.getCurrentStage(),
-                resourceId).awarded();
+                resourceId,
+                1.0).awarded();
     }
 }

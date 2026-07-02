@@ -17,18 +17,33 @@ public interface ProgressionService {
      *
      * Execution sequence (all within one transaction):
      *   1. SELECT total_xp FROM students WHERE id = ? FOR UPDATE
-     *   2. Sum existing xp_entries for (student, stageType, activityType) to find remaining cap
-     *   3. actualAward = MIN(amount, remainingCap)
-     *   4. INSERT INTO xp_entries
-     *   5. UPDATE students SET total_xp = total_xp + actualAward
+     *   2. decayedAmount = (int)(amount * decayRate)
+     *   3. Sum existing xp_entries for (student, stageType, activityType) to find remaining cap
+     *   4. actualAward = MIN(decayedAmount, remainingCap)
+     *   5. INSERT INTO xp_entries
+     *   6. UPDATE students SET total_xp = total_xp + actualAward
      *
      * @param studentId    ID of the student receiving XP
-     * @param amount       requested XP amount (post-decay; caller applies attempt/tier decay)
+     * @param amount       base XP amount before decay
      * @param activityType type of activity driving the award
      * @param stageType    stage the student currently holds (used for cap bucket)
      * @param sourceId     optional reference id of the source entity (resource, drill, build, etc.)
+     * @param decayRate    multiplier from {@link #decayRate(int)}: 1.0 / 0.75 / 0.50 / 0.25
      * @return XpAwardResult with the actual XP credited and whether the cap was hit
      */
     XpAwardResult awardXp(Long studentId, int amount, ActivityType activityType,
-                          String stageType, Long sourceId);
+                          String stageType, Long sourceId, double decayRate);
+
+    /**
+     * Returns the XP decay multiplier for a given attempt number.
+     * 1st attempt: 100%, 2nd: 75%, 3rd: 50%, 4th and beyond: 25%.
+     */
+    static double decayRate(int attemptNumber) {
+        return switch (attemptNumber) {
+            case 1 -> 1.0;
+            case 2 -> 0.75;
+            case 3 -> 0.50;
+            default -> 0.25;
+        };
+    }
 }

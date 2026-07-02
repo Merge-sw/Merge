@@ -10,4 +10,7 @@ import java.util.Optional;
 public interface DrillSubmissionRepository extends JpaRepository<DrillSubmission, Long> {
 
     Optional<DrillSubmission> findByIdempotencyKey(String idempotencyKey);
+
+    /** Counts previous submissions to determine the next attempt_number. */
+    int countByStudentIdAndDrillId(Long studentId, Long drillId);
 }

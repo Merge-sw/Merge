@@ -132,9 +132,9 @@ public class BuildSubmitService {
         } else if (!gate3Passed) {
             // MINIMUM tier: gates 1+2 passed, gate 3 failed. Award 150 XP × decay immediately.
             // The comprehension check is not triggered; this is the terminal evaluation point.
-            int xp = progressionService.awardXp(student,
+            int xp = progressionService.awardXp(student.getId(),
                     BuildPassTier.MINIMUM.computeXp(attemptNumber),
-                    ActivityType.BUILD_PASS, build.getStageName(), buildId);
+                    ActivityType.BUILD_PASS, build.getStageName(), buildId).awarded();
             submission.setTier(BuildPassTier.MINIMUM.name());
             submission.setXpAwarded(xp);
             submission.setOverallStatus(BuildSubmissionStatus.PASSED);

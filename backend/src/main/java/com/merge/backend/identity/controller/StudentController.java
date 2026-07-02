@@ -1,10 +1,12 @@
 package com.merge.backend.identity.controller;
 
 import com.merge.backend.identity.dto.GeminiTokenRequest;
+import com.merge.backend.identity.dto.PromotionStatusResponse;
 import com.merge.backend.identity.dto.StudentResponse;
 import com.merge.backend.identity.dto.UpdateProfileRequest;
 import com.merge.backend.identity.service.GeminiTokenService;
 import com.merge.backend.identity.service.InvalidGeminiTokenException;
+import com.merge.backend.identity.service.PromotionStatusService;
 import com.merge.backend.identity.service.StudentService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -21,11 +23,14 @@ public class StudentController {
 
     private final StudentService studentService;
     private final GeminiTokenService geminiTokenService;
+    private final PromotionStatusService promotionStatusService;
 
     public StudentController(StudentService studentService,
-                             GeminiTokenService geminiTokenService) {
+                             GeminiTokenService geminiTokenService,
+                             PromotionStatusService promotionStatusService) {
         this.studentService = studentService;
         this.geminiTokenService = geminiTokenService;
+        this.promotionStatusService = promotionStatusService;
     }
 
     /**
@@ -67,6 +72,22 @@ public class StudentController {
         StudentResponse response = geminiTokenService.saveToken(
                 userDetails.getUsername(), request.token());
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * GET /api/v1/students/me/stage/promotion-status
+     * Checks both promotion gates simultaneously for the authenticated student:
+     *   1. total_xp >= stage.xp_threshold
+     *   2. cumulative build pass score >= stage.build_pass_score_threshold
+     *
+     * Build pass score = SUM of best overallScore per distinct build with a PASSED submission.
+     * Returns exact deficit numbers so the client can display progress to the student.
+     */
+    @GetMapping("/me/stage/promotion-status")
+    public ResponseEntity<PromotionStatusResponse> getPromotionStatus(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(
+                promotionStatusService.check(userDetails.getUsername()));
     }
 
     @ExceptionHandler(InvalidGeminiTokenException.class)

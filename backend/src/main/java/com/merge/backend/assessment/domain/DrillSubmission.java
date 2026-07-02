@@ -67,6 +67,10 @@ public class DrillSubmission {
     @Column(name = "status", nullable = false, length = 30)
     private DrillSubmissionStatus status = DrillSubmissionStatus.PENDING;
 
+    /** Compiler or runtime error output returned to the student on 400 responses. */
+    @Column(name = "stderr", columnDefinition = "text")
+    private String stderr;
+
     @Column(name = "submitted_at", nullable = false)
     private Instant submittedAt;
 }

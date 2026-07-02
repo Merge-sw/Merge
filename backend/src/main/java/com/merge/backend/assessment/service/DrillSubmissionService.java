@@ -34,6 +34,7 @@ public class DrillSubmissionService {
     private final ConceptUnlockRepository conceptUnlockRepository;
     private final StudentRepository studentRepository;
     private final Judge0ExecutionService judge0ExecutionService;
+    private final ComprehensionCheckService comprehensionCheckService;
 
     public DrillSubmissionService(DrillRepository drillRepository,
                                   DrillSubmissionRepository submissionRepository,
@@ -41,7 +42,8 @@ public class DrillSubmissionService {
                                   CodeReadingSubmissionRepository codeReadingSubmissionRepository,
                                   ConceptUnlockRepository conceptUnlockRepository,
                                   StudentRepository studentRepository,
-                                  Judge0ExecutionService judge0ExecutionService) {
+                                  Judge0ExecutionService judge0ExecutionService,
+                                  ComprehensionCheckService comprehensionCheckService) {
         this.drillRepository = drillRepository;
         this.submissionRepository = submissionRepository;
         this.drillCompletionRepository = drillCompletionRepository;
@@ -49,6 +51,7 @@ public class DrillSubmissionService {
         this.conceptUnlockRepository = conceptUnlockRepository;
         this.studentRepository = studentRepository;
         this.judge0ExecutionService = judge0ExecutionService;
+        this.comprehensionCheckService = comprehensionCheckService;
     }
 
     /**
@@ -121,6 +124,12 @@ public class DrillSubmissionService {
         submission = submissionRepository.save(submission);
 
         mapOutcomeToHttpException(outcome);
+
+        // Status 3 (Accepted) — trigger comprehension check immediately using the student's
+        // specific code so questions are grounded in their actual variable names and decisions.
+        if (outcome.testsPassed()) {
+            comprehensionCheckService.triggerFor(submission);
+        }
 
         return DrillSubmitResponse.from(submission, outcome.testsPassed());
     }

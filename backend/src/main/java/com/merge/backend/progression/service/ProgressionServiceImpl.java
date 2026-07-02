@@ -5,38 +5,25 @@ import com.merge.backend.identity.repository.StudentRepository;
 import com.merge.backend.progression.domain.ActivityType;
 import com.merge.backend.progression.domain.XpEntry;
 import com.merge.backend.progression.dto.XpAwardResult;
+import com.merge.backend.progression.repository.XpCapRepository;
 import com.merge.backend.progression.repository.XpEntryRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.Map;
 
 @Service
 public class ProgressionServiceImpl implements ProgressionService {
 
-    /**
-     * Maximum XP a student can earn from a given activity type within one stage.
-     *
-     * BUILD_PASS cap is generous (10 × DISTINCTION tier) so normal completion paths
-     * are never blocked. DRILL_PASS allows full concept coverage per stage.
-     * LEARNING_RESOURCE is intentionally low — these are supplementary, not primary XP.
-     * Unlisted activity types are uncapped.
-     */
-    private static final Map<ActivityType, Integer> STAGE_CAPS = Map.of(
-            ActivityType.LEARNING_RESOURCE,   50,
-            ActivityType.DRILL_PASS,         600,
-            ActivityType.BUILD_PASS,        5000,
-            ActivityType.PEER_REVIEW,        500,
-            ActivityType.STREAK_BONUS,       200
-    );
-
     private final XpEntryRepository xpEntryRepository;
+    private final XpCapRepository xpCapRepository;
     private final StudentRepository studentRepository;
 
     public ProgressionServiceImpl(XpEntryRepository xpEntryRepository,
+                                  XpCapRepository xpCapRepository,
                                   StudentRepository studentRepository) {
         this.xpEntryRepository = xpEntryRepository;
+        this.xpCapRepository = xpCapRepository;
         this.studentRepository = studentRepository;
     }
 
@@ -60,7 +47,11 @@ public class ProgressionServiceImpl implements ProgressionService {
         Student student = studentRepository.findByIdForUpdate(studentId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found: " + studentId));
 
-        int cap = STAGE_CAPS.getOrDefault(activityType, Integer.MAX_VALUE);
+        // Read cap from xp_caps table. No row = uncapped (Integer.MAX_VALUE).
+        int cap = xpCapRepository
+                .findByStageNameAndActivityType(stageType, activityType)
+                .map(c -> c.getCapAmount())
+                .orElse(Integer.MAX_VALUE);
 
         int alreadyEarned = xpEntryRepository.sumByStudentIdAndStageTypeAndActivityType(
                 studentId, stageType, activityType);

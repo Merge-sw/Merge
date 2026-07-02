@@ -5,6 +5,7 @@ import com.merge.backend.assessment.domain.Drill;
 import com.merge.backend.assessment.dto.DrillResponse;
 import com.merge.backend.assessment.dto.GenerateDrillsRequest;
 import com.merge.backend.assessment.dto.GeneratedDrill;
+import com.merge.backend.assessment.repository.CodeReadingSubmissionRepository;
 import com.merge.backend.assessment.repository.DrillCompletionRepository;
 import com.merge.backend.assessment.repository.DrillRepository;
 import com.merge.backend.curriculum.domain.Concept;
@@ -27,6 +28,7 @@ public class DrillService {
 
     private final DrillRepository drillRepository;
     private final DrillCompletionRepository drillCompletionRepository;
+    private final CodeReadingSubmissionRepository codeReadingSubmissionRepository;
     private final ConceptRepository conceptRepository;
     private final ConceptUnlockRepository conceptUnlockRepository;
     private final StudentRepository studentRepository;
@@ -35,6 +37,7 @@ public class DrillService {
 
     public DrillService(DrillRepository drillRepository,
                         DrillCompletionRepository drillCompletionRepository,
+                        CodeReadingSubmissionRepository codeReadingSubmissionRepository,
                         ConceptRepository conceptRepository,
                         ConceptUnlockRepository conceptUnlockRepository,
                         StudentRepository studentRepository,
@@ -42,6 +45,7 @@ public class DrillService {
                         GeminiGateway geminiGateway) {
         this.drillRepository = drillRepository;
         this.drillCompletionRepository = drillCompletionRepository;
+        this.codeReadingSubmissionRepository = codeReadingSubmissionRepository;
         this.conceptRepository = conceptRepository;
         this.conceptUnlockRepository = conceptUnlockRepository;
         this.studentRepository = studentRepository;
@@ -51,9 +55,10 @@ public class DrillService {
 
     /**
      * Returns Drill 1 and Drill 2 for this student + concept.
-     * Generates them via AI-02 on first access and caches in the drills table.
-     * Drill 2 is locked until Drill 1 comprehension check has passed.
-     * Throws ConceptLockedException (403) if the concept is not yet unlocked for the student.
+     * Generates via AI-02 on first access and caches in the drills table.
+     * Drill 2 locked: until Drill 1 comprehension check passes.
+     * Drill 2 codeReadingCompleted: false until student submits code reading response.
+     * 403 if concept not yet unlocked.
      */
     @Transactional
     public List<DrillResponse> getDrills(Long conceptId, String studentEmail) {
@@ -80,9 +85,12 @@ public class DrillService {
         boolean drill1Passed = drillCompletionRepository
                 .existsByStudentIdAndDrillIdAndComprehensionPassedTrue(student.getId(), drill1.getId());
 
+        boolean codeReadingDone = codeReadingSubmissionRepository
+                .existsByStudentIdAndDrillId(student.getId(), drill2.getId());
+
         return List.of(
-                DrillResponse.from(drill1, false),
-                DrillResponse.from(drill2, !drill1Passed)
+                DrillResponse.from(drill1, false, false),
+                DrillResponse.from(drill2, !drill1Passed, codeReadingDone)
         );
     }
 

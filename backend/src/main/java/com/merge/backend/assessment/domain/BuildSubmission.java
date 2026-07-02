@@ -75,6 +75,15 @@ public class BuildSubmission {
     @Column(name = "gate1_passed")
     private Boolean gate1Passed;
 
+    /**
+     * Whether Gate 2 (student's own test suite executed via Judge0) passed.
+     * Requires: all submitted tests pass AND static quality checks pass
+     * (non-empty, non-trivial, Cadet minimum met).
+     * Null until Gate 2 has been evaluated for this submission.
+     */
+    @Column(name = "gate2_passed")
+    private Boolean gate2Passed;
+
     /** Populated once all gates pass and XP has been awarded via ProgressionService. */
     @Column(name = "xp_awarded")
     private Integer xpAwarded;

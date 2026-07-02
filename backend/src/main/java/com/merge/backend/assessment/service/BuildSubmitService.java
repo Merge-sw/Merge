@@ -40,6 +40,7 @@ public class BuildSubmitService {
     private final StudentRepository studentRepository;
     private final StageRepository stageRepository;
     private final Judge0ExecutionService judge0ExecutionService;
+    private final BuildTestSuiteValidator testSuiteValidator;
     private final GeminiGateway geminiGateway;
     private final ProgressionService progressionService;
 
@@ -155,7 +156,34 @@ public class BuildSubmitService {
         submission.setGate1Passed(gate1Passed);
         buildSubmissionRepository.saveAndFlush(submission);
 
-        // Gate 2 — Architecture review
+        // Gate 2 — Student's own test suite executed via Judge0.
+        // Static quality checks (empty, trivial, Cadet minimum) run first to avoid
+        // burning Judge0 quota on suites that are structurally invalid.
+        BuildGateResult testQualityResult = findGate(gateResults, BuildGate.TEST_QUALITY);
+        boolean gate2Passed = false;
+        try {
+            BuildTestSuiteValidator.ValidationResult validation =
+                    testSuiteValidator.validate(request.testSuite(), stage.getName());
+            if (!validation.valid()) {
+                markFailed(testQualityResult, validation.errorMessage());
+            } else {
+                Judge0Outcome studentOutcome = judge0ExecutionService.execute(
+                        request.code(), request.testSuite());
+                gate2Passed = studentOutcome.testsPassed();
+                if (gate2Passed) {
+                    markPassed(testQualityResult, null);
+                } else {
+                    markFailed(testQualityResult, studentTestFeedback(studentOutcome));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Student test gate threw exception for submission {}: {}", submission.getId(), e.getMessage());
+            markFailed(testQualityResult, "Test execution failed");
+        }
+        submission.setGate2Passed(gate2Passed);
+        buildSubmissionRepository.saveAndFlush(submission);
+
+        // Gate 3 — Architecture review
         BuildGateResult archResult = findGate(gateResults, BuildGate.ARCHITECTURE);
         try {
             boolean passed = geminiGateway.reviewBuildArchitecture(new BuildArchitectureReviewRequest(
@@ -190,24 +218,6 @@ public class BuildSubmitService {
         } catch (Exception e) {
             log.warn("Clean code gate threw exception for submission {}: {}", submission.getId(), e.getMessage());
             markFailed(cleanCodeResult, "Clean code review unavailable");
-        }
-
-        // Gate 4 — Test quality
-        BuildGateResult testQualityResult = findGate(gateResults, BuildGate.TEST_QUALITY);
-        try {
-            boolean passed = geminiGateway.reviewBuildTestQuality(new BuildTestQualityRequest(
-                    request.code(),
-                    request.testSuite(),
-                    build.getRequirements()
-            ));
-            if (passed) {
-                markPassed(testQualityResult, null);
-            } else {
-                markFailed(testQualityResult, "Test suite does not demonstrate sufficient coverage or meaningful assertions");
-            }
-        } catch (Exception e) {
-            log.warn("Test quality gate threw exception for submission {}: {}", submission.getId(), e.getMessage());
-            markFailed(testQualityResult, "Test quality review unavailable");
         }
 
         // Gate 5 — Competency signal
@@ -257,6 +267,20 @@ public class BuildSubmitService {
         result.setStatus(BuildGateStatus.FAILED);
         result.setFeedback(feedback);
         result.setEvaluatedAt(Instant.now());
+    }
+
+    /**
+     * Gate 2 feedback: student's own tests failed against their own code.
+     * No hidden content is at risk here — stderr is safe to surface in full.
+     */
+    private String studentTestFeedback(Judge0Outcome outcome) {
+        return switch (outcome.statusId()) {
+            case 4 -> "Not all submitted tests pass against your code"
+                    + (outcome.stderr() != null ? ": " + outcome.stderr() : "");
+            case 5 -> "Test execution timed out";
+            case 6 -> "Compilation error" + (outcome.stderr() != null ? ": " + outcome.stderr() : "");
+            default -> "Runtime error" + (outcome.stderr() != null ? ": " + outcome.stderr() : "");
+        };
     }
 
     /**

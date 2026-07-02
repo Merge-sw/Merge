@@ -1,12 +1,15 @@
 package com.merge.backend.identity.controller;
 
 import com.merge.backend.identity.dto.GeminiTokenRequest;
+import com.merge.backend.identity.dto.PromoteResponse;
 import com.merge.backend.identity.dto.PromotionStatusResponse;
 import com.merge.backend.identity.dto.StudentResponse;
 import com.merge.backend.identity.dto.UpdateProfileRequest;
 import com.merge.backend.identity.service.GeminiTokenService;
 import com.merge.backend.identity.service.InvalidGeminiTokenException;
+import com.merge.backend.identity.service.PromotionNotEligibleException;
 import com.merge.backend.identity.service.PromotionStatusService;
+import com.merge.backend.identity.service.StagePromotionService;
 import com.merge.backend.identity.service.StudentService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -24,13 +27,16 @@ public class StudentController {
     private final StudentService studentService;
     private final GeminiTokenService geminiTokenService;
     private final PromotionStatusService promotionStatusService;
+    private final StagePromotionService stagePromotionService;
 
     public StudentController(StudentService studentService,
                              GeminiTokenService geminiTokenService,
-                             PromotionStatusService promotionStatusService) {
+                             PromotionStatusService promotionStatusService,
+                             StagePromotionService stagePromotionService) {
         this.studentService = studentService;
         this.geminiTokenService = geminiTokenService;
         this.promotionStatusService = promotionStatusService;
+        this.stagePromotionService = stagePromotionService;
     }
 
     /**
@@ -88,6 +94,30 @@ public class StudentController {
             @AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.ok(
                 promotionStatusService.check(userDetails.getUsername()));
+    }
+
+    /**
+     * POST /api/v1/students/me/stage/promote
+     * Promotes the authenticated student to the next stage when both gates are met:
+     *   1. total_xp >= stage.xp_threshold
+     *   2. cumulative build pass score >= stage.build_pass_score_threshold
+     *
+     * 200 — promoted; returns { fromStage, toStage, xpAtPromotion, buildScoreAtPromotion }
+     * 403 — not eligible; returns { missingXp, missingBuildScore } with exact deficits
+     * 409 — already promoted from this stage, or already at the highest stage
+     */
+    @PostMapping("/me/stage/promote")
+    public ResponseEntity<PromoteResponse> promote(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(stagePromotionService.promote(userDetails.getUsername()));
+    }
+
+    @ExceptionHandler(PromotionNotEligibleException.class)
+    public ResponseEntity<Map<String, Integer>> handleNotEligible(PromotionNotEligibleException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of(
+                        "missingXp", ex.getMissingXp(),
+                        "missingBuildScore", ex.getMissingBuildScore()));
     }
 
     @ExceptionHandler(InvalidGeminiTokenException.class)

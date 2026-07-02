@@ -59,10 +59,10 @@ public class ResourceCompletionService {
         completionRepository.save(completion);
 
         return progressionService.awardXp(
-                student,
+                student.getId(),
                 RESOURCE_XP,
                 ActivityType.LEARNING_RESOURCE,
                 student.getCurrentStage(),
-                resourceId);
+                resourceId).awarded();
     }
 }

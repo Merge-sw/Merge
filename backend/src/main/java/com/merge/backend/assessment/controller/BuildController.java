@@ -1,6 +1,7 @@
 package com.merge.backend.assessment.controller;
 
 import com.merge.backend.assessment.domain.Build;
+import com.merge.backend.assessment.dto.BuildGeneratingResponse;
 import com.merge.backend.assessment.dto.BuildStatusResponse;
 import com.merge.backend.assessment.repository.BuildRepository;
 import com.merge.backend.identity.domain.Student;
@@ -30,17 +31,18 @@ public class BuildController {
     /**
      * GET /api/v1/builds/current
      *
-     * Returns the build record for the authenticated student's current stage.
+     * Returns the AI-03-generated build for the student's current stage.
+     * The PRD and all related fields are personalised to this student's specific
+     * Drill performance history — not generic templates.
      *
      * Responses:
-     *   404 — build not yet unlocked (both conditions not met)
-     *   202 — build unlocked but PRD generation job has not yet completed (prd is null)
-     *         Client should poll; timer/spinner is appropriate here
-     *   200 { buildId, stageName, status: "READY", unlockedAt, prd } — PRD ready
+     *   403 — build not yet unlocked (XP threshold or drill conditions not yet met)
+     *   202 { generating: true } — unlocked but BUILD_PRD_GENERATION job not yet complete;
+     *         client should poll until 200 is received
+     *   200 { buildId, stageName, unlockedAt, prd, requirements, constraints, sfiaCompetencies }
      */
     @GetMapping("/current")
-    public ResponseEntity<BuildStatusResponse> getCurrent(
-            @AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<?> getCurrent(@AuthenticationPrincipal UserDetails userDetails) {
 
         Student student = studentRepository.findByEmail(userDetails.getUsername())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
@@ -48,15 +50,13 @@ public class BuildController {
         Build build = buildRepository
                 .findByStudentIdAndStageName(student.getId(), student.getCurrentStage())
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Build not yet unlocked for stage " + student.getCurrentStage()));
-
-        BuildStatusResponse body = BuildStatusResponse.from(build);
+                        HttpStatus.FORBIDDEN, "Build not yet unlocked for stage " + student.getCurrentStage()));
 
         if (build.getPrd() == null) {
-            // PRD generation job queued but not yet complete — client polls
-            return ResponseEntity.status(HttpStatus.ACCEPTED).body(body);
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .body(BuildGeneratingResponse.instance());
         }
 
-        return ResponseEntity.ok(body);
+        return ResponseEntity.ok(BuildStatusResponse.from(build));
     }
 }

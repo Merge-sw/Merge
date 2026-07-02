@@ -57,8 +57,8 @@ public class BuildComprehensionTriggerService {
         Instant deadline = now.plusSeconds((long) questionTexts.size() * 10);
 
         BuildComprehensionCheck check = new BuildComprehensionCheck();
-        check.setBuildSubmission(sub);
-        check.setStudent(sub.getStudent());
+        check.setBuildSubmission(submission);
+        check.setStudent(submission.getStudent());
         check.setQuestions(questionTexts);
         check.setTriggeredAt(now);
         check.setServerDeadline(deadline);

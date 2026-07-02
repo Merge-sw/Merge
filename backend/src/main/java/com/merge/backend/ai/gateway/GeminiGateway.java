@@ -139,5 +139,12 @@ public interface GeminiGateway {
      * the student's actual journey (recent weekly momentum states) and their last active concept.
      */
     String generateDisengagementReachOut(String studentName, String lastActiveConcept, List<String> recentStates);
+
+    /**
+     * AI-05 — AudioWriter: generates a 5-7 minute audio script reinforcement/primer
+     * based on concept, audioType, and student personalization parameters.
+     */
+    String generateAudioScript(String conceptName, String audioType, String learningApproach, List<String> weakConcepts);
 }
+
 

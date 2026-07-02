@@ -1,5 +1,9 @@
 package com.merge.backend.ai.gateway;
 
+import com.merge.backend.assessment.dto.BuildArchitectureReviewRequest;
+import com.merge.backend.assessment.dto.BuildCleanCodeReviewRequest;
+import com.merge.backend.assessment.dto.BuildCompetencySignalRequest;
+import com.merge.backend.assessment.dto.BuildTestQualityRequest;
 import com.merge.backend.assessment.dto.ComprehensionQuestion;
 import com.merge.backend.assessment.dto.ComprehensionQuestionsRequest;
 import com.merge.backend.assessment.dto.ComprehensionScoreRequest;
@@ -61,4 +65,39 @@ public interface GeminiGateway {
      * @return true if the student demonstrated genuine understanding; false otherwise
      */
     boolean scoreComprehensionAnswers(ComprehensionScoreRequest request);
+
+    /**
+     * AI-06 — Build Gate 2: reviews the student's architecture document against the
+     * personalised PRD requirements and constraints. Checks that every requirement
+     * is addressed and constraints are respected in the documented design.
+     *
+     * @return true if the architecture document sufficiently addresses the PRD; false otherwise
+     */
+    boolean reviewBuildArchitecture(BuildArchitectureReviewRequest request);
+
+    /**
+     * AI-07 — Build Gate 3: evaluates code quality calibrated to the stage's clean-code level
+     * (NAMING_ONLY → NAMING_SIZE_REDUNDANCY → FULL_SOLID → HUMAN_REVIEW).
+     * Only violations appropriate for the stage are penalised.
+     *
+     * @return true if the code meets the stage's clean-code standard; false otherwise
+     */
+    boolean reviewBuildCleanCode(BuildCleanCodeReviewRequest request);
+
+    /**
+     * AI-08 — Build Gate 4: evaluates the student's test suite for coverage,
+     * edge-case handling, and alignment with the PRD requirements.
+     * Tests that trivially pass or duplicate production code without asserting behaviour are penalised.
+     *
+     * @return true if the test suite demonstrates meaningful quality; false otherwise
+     */
+    boolean reviewBuildTestQuality(BuildTestQualityRequest request);
+
+    /**
+     * AI-09 — Build Gate 5: assesses whether the submission demonstrates the SFIA competencies
+     * this build was designed to target. Evaluates code, tests, and architecture together.
+     *
+     * @return true if competency signals are present; false otherwise
+     */
+    boolean evaluateBuildCompetencySignal(BuildCompetencySignalRequest request);
 }

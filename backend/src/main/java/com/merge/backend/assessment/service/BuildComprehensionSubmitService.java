@@ -3,19 +3,25 @@ package com.merge.backend.assessment.service;
 import com.merge.backend.ai.gateway.GeminiGateway;
 import com.merge.backend.assessment.domain.BuildComprehensionCheck;
 import com.merge.backend.assessment.domain.BuildComprehensionCheckStatus;
+import com.merge.backend.assessment.domain.BuildGate;
+import com.merge.backend.assessment.domain.BuildGateResult;
+import com.merge.backend.assessment.domain.BuildGateStatus;
 import com.merge.backend.assessment.domain.BuildSubmission;
 import com.merge.backend.assessment.domain.BuildSubmissionStatus;
+import com.merge.backend.assessment.dto.BuildCompetencySignalRequest;
 import com.merge.backend.assessment.dto.BuildComprehensionScoreRequest;
 import com.merge.backend.assessment.dto.BuildComprehensionSubmitRequest;
 import com.merge.backend.assessment.dto.BuildComprehensionSubmitResponse;
 import com.merge.backend.assessment.exception.BuildComprehensionTimerExpiredException;
 import com.merge.backend.assessment.repository.BuildComprehensionCheckRepository;
+import com.merge.backend.assessment.repository.BuildGateResultRepository;
 import com.merge.backend.assessment.repository.BuildSubmissionRepository;
 import com.merge.backend.identity.domain.Student;
 import com.merge.backend.identity.repository.StudentRepository;
 import com.merge.backend.progression.domain.ActivityType;
 import com.merge.backend.progression.service.ProgressionService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -28,10 +34,12 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class BuildComprehensionSubmitService {
 
     private final BuildComprehensionCheckRepository checkRepository;
     private final BuildSubmissionRepository buildSubmissionRepository;
+    private final BuildGateResultRepository buildGateResultRepository;
     private final StudentRepository studentRepository;
     private final GeminiGateway geminiGateway;
     private final ProgressionService progressionService;
@@ -109,6 +117,45 @@ public class BuildComprehensionSubmitService {
         checkRepository.save(check);
 
         submission.setGate4Passed(true);
+
+        // Gate 5 — SFIA competency signal: runs immediately after gate 4 passes.
+        // AI evaluates both code and architecture document against the SFIA skill descriptors
+        // declared in build.sfia_competencies. Pass requires evidence in both artefacts.
+        BuildGateResult competencyResult = new BuildGateResult();
+        competencyResult.setBuildSubmission(submission);
+        competencyResult.setGate(BuildGate.COMPETENCY_SIGNAL);
+
+        boolean competencyPassed;
+        try {
+            competencyPassed = geminiGateway.evaluateBuildCompetencySignal(
+                    new BuildCompetencySignalRequest(
+                            submission.getCode(),
+                            submission.getTestSuite(),
+                            submission.getArchitectureDocument(),
+                            submission.getBuild().getSfiaCompetencies()
+                    ));
+        } catch (Exception e) {
+            log.warn("SFIA competency gate threw exception for submission {}: {}",
+                    submission.getId(), e.getMessage());
+            competencyPassed = false;
+        }
+
+        competencyResult.setStatus(competencyPassed ? BuildGateStatus.PASSED : BuildGateStatus.FAILED);
+        competencyResult.setFeedback(competencyPassed
+                ? null
+                : "Submission does not demonstrate sufficient evidence of the required SFIA competencies "
+                  + "in both the code and the architecture document");
+        competencyResult.setEvaluatedAt(Instant.now());
+        buildGateResultRepository.save(competencyResult);
+
+        if (!competencyPassed) {
+            submission.setGate5Passed(false);
+            submission.setOverallStatus(BuildSubmissionStatus.FAILED);
+            buildSubmissionRepository.save(submission);
+            return BuildComprehensionSubmitResponse.failed();
+        }
+
+        submission.setGate5Passed(true);
         submission.setOverallStatus(BuildSubmissionStatus.PASSED);
         int awarded = progressionService.awardXp(
                 student,

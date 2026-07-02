@@ -63,4 +63,9 @@ public class RedisConfig {
     public StringRedisTemplate stringRedisTemplate(LettuceConnectionFactory redisConnectionFactory) {
         return new StringRedisTemplate(redisConnectionFactory);
     }
+
+    @Bean
+    public org.springframework.web.client.RestTemplate restTemplate() {
+        return new org.springframework.web.client.RestTemplate();
+    }
 }

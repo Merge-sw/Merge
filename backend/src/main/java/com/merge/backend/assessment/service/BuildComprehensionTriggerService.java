@@ -20,9 +20,16 @@ public class BuildComprehensionTriggerService {
     private final GeminiGateway geminiGateway;
     private final BuildComprehensionCheckRepository buildComprehensionCheckRepository;
 
+    static final int MIN_QUESTIONS = 4;
+    static final int MAX_QUESTIONS = 6;
+
     /**
      * Generates Build comprehension questions from the student's specific artefacts
      * (code, architecture document, test strategies) and persists the check as PENDING.
+     *
+     * Called immediately when Judge0 returns status 3 (Gate 1 accepted).
+     * Questions reference the student's actual variable names, function names,
+     * data structures, and architectural choices — unanswerable without this exact code.
      *
      * serverDeadline = triggeredAt + (questionCount × 10 seconds)
      * Questions differ across submission attempts because they're generated from the
@@ -31,18 +38,19 @@ public class BuildComprehensionTriggerService {
      * @return the saved BuildComprehensionCheck (caller uses its ID for the response)
      */
     public BuildComprehensionCheck triggerFor(BuildSubmission submission) {
-        BuildSubmission sub = submission;
-
         List<ComprehensionQuestion> generated = geminiGateway.generateBuildComprehensionQuestions(
                 new BuildComprehensionQuestionsRequest(
-                        sub.getCode(),
-                        sub.getArchitectureDocument(),
-                        sub.getTestSuite(),
-                        sub.getBuild().getStageName()
+                        submission.getCode(),
+                        submission.getArchitectureDocument(),
+                        submission.getTestSuite(),
+                        submission.getBuild().getStageName(),
+                        MIN_QUESTIONS,
+                        MAX_QUESTIONS
                 ));
 
         List<String> questionTexts = generated.stream()
                 .map(ComprehensionQuestion::questionText)
+                .limit(MAX_QUESTIONS)
                 .toList();
 
         Instant now = Instant.now();

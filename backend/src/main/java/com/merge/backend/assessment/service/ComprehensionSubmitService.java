@@ -33,19 +33,22 @@ public class ComprehensionSubmitService {
     private final GeminiGateway geminiGateway;
     private final ProgressionService progressionService;
     private final ConceptUnlockService conceptUnlockService;
+    private final BuildUnlockService buildUnlockService;
 
     public ComprehensionSubmitService(ComprehensionCheckRepository comprehensionCheckRepository,
                                       DrillCompletionRepository drillCompletionRepository,
                                       StudentRepository studentRepository,
                                       GeminiGateway geminiGateway,
                                       ProgressionService progressionService,
-                                      ConceptUnlockService conceptUnlockService) {
+                                      ConceptUnlockService conceptUnlockService,
+                                      BuildUnlockService buildUnlockService) {
         this.comprehensionCheckRepository = comprehensionCheckRepository;
         this.drillCompletionRepository = drillCompletionRepository;
         this.studentRepository = studentRepository;
         this.geminiGateway = geminiGateway;
         this.progressionService = progressionService;
         this.conceptUnlockService = conceptUnlockService;
+        this.buildUnlockService = buildUnlockService;
     }
 
     /**
@@ -130,9 +133,12 @@ public class ComprehensionSubmitService {
                 check.getDrill().getId()
         );
 
-        // Async job: check if both drills for this concept have now passed comprehension,
-        // and unlock the next concept if so.
+        // Unlock next concept if both drills for this concept now have passing comprehension.
         conceptUnlockService.triggerUnlockIfEligible(student, check.getDrill().getConcept());
+
+        // Check both build-unlock conditions simultaneously: all stage drills passed + XP threshold.
+        // XP was just awarded above, so student.totalXp is current at the point of this check.
+        buildUnlockService.checkAndUnlock(student, student.getCurrentStage());
 
         return ComprehensionSubmitResponse.passed(xpAwarded);
     }

@@ -12,4 +12,5 @@ public interface ConceptRepository extends JpaRepository<Concept, Long> {
     List<Concept> findByStageNameOrderBySequenceOrder(String stageName);
     Optional<Concept> findByStageNameAndSequenceOrder(String stageName, int sequenceOrder);
     Optional<Concept> findFirstByStageNameOrderBySequenceOrderAsc(String stageName);
+    long countByStageName(String stageName);
 }

@@ -28,4 +28,20 @@ public interface DrillCompletionRepository extends JpaRepository<DrillCompletion
 
     /** Used before creating a new completion record to avoid duplicates. */
     Optional<DrillCompletion> findByStudentIdAndDrillId(Long studentId, Long drillId);
+
+    /**
+     * Counts distinct drills (by drill_id) that this student has passed comprehension on
+     * across all concepts of a given stage. Used to verify all drills are done before
+     * unlocking the build. Native query avoids JPQL CONCAT limitations.
+     */
+    @Query(value = "SELECT COUNT(DISTINCT dc.drill_id) " +
+                   "FROM drill_completions dc " +
+                   "JOIN drills d ON dc.drill_id = d.id " +
+                   "JOIN concepts c ON d.concept_id = c.id " +
+                   "WHERE dc.student_id = :studentId " +
+                   "AND c.stage_name = :stageName " +
+                   "AND dc.comprehension_passed = true",
+           nativeQuery = true)
+    long countPassedDrillsForStage(@Param("studentId") Long studentId,
+                                   @Param("stageName") String stageName);
 }

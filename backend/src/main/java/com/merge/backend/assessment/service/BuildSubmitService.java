@@ -7,6 +7,7 @@ import com.merge.backend.assessment.domain.*;
 import com.merge.backend.assessment.dto.*;
 import com.merge.backend.assessment.dto.CleanCodeReviewResult;
 import com.merge.backend.assessment.exception.DuplicateBuildSubmissionException;
+import com.merge.backend.assessment.repository.BuildComprehensionCheckRepository;
 import com.merge.backend.assessment.repository.BuildGateResultRepository;
 import com.merge.backend.assessment.repository.BuildRepository;
 import com.merge.backend.assessment.repository.BuildSubmissionRepository;
@@ -14,7 +15,6 @@ import com.merge.backend.curriculum.domain.Stage;
 import com.merge.backend.curriculum.repository.StageRepository;
 import com.merge.backend.identity.domain.Student;
 import com.merge.backend.identity.repository.StudentRepository;
-import com.merge.backend.assessment.domain.BuildComprehensionCheck;
 import com.merge.backend.assessment.judge0.Judge0ExecutionService;
 import com.merge.backend.assessment.judge0.Judge0Outcome;
 import com.merge.backend.infrastructure.queue.JobQueueService;
@@ -40,6 +40,7 @@ public class BuildSubmitService {
 
     private final BuildRepository buildRepository;
     private final BuildSubmissionRepository buildSubmissionRepository;
+    private final BuildComprehensionCheckRepository buildComprehensionCheckRepository;
     private final BuildGateResultRepository buildGateResultRepository;
     private final StudentRepository studentRepository;
     private final StageRepository stageRepository;
@@ -117,7 +118,7 @@ public class BuildSubmitService {
         List<BuildGateResult> gateResults = initGateResults(submission);
         buildGateResultRepository.saveAllAndFlush(gateResults);
 
-        runGates(submission, gateResults, build, stage, request);
+        BuildComprehensionCheck comprehensionCheck = runGates(submission, gateResults, build, stage, request);
 
         boolean gate1Passed = Boolean.TRUE.equals(submission.getGate1Passed());
         boolean gate2Passed = Boolean.TRUE.equals(submission.getGate2Passed());
@@ -128,10 +129,11 @@ public class BuildSubmitService {
         if (!gate1Passed || !gate2Passed) {
             // Gates 1 and 2 are hard requirements — no tier, no XP.
             submission.setOverallStatus(BuildSubmissionStatus.FAILED);
+            expireComprehensionCheck(comprehensionCheck);
 
         } else if (!gate3Passed) {
             // MINIMUM tier: gates 1+2 passed, gate 3 failed. Award 150 XP × decay immediately.
-            // The comprehension check is not triggered; this is the terminal evaluation point.
+            // Comprehension was generated after Gate 1 but is not needed for this tier.
             int xp = progressionService.awardXp(student.getId(),
                     BuildPassTier.MINIMUM.baseXp,
                     ActivityType.BUILD_PASS, build.getStageName(), buildId,
@@ -140,12 +142,12 @@ public class BuildSubmitService {
             submission.setXpAwarded(xp);
             submission.setOverallStatus(BuildSubmissionStatus.PASSED);
             enqueuePassJobs(submission);
+            expireComprehensionCheck(comprehensionCheck);
 
         } else {
-            // Gates 1+2+3 all passed — trigger comprehension (gate 4).
+            // Gates 1+2+3 all passed — comprehension was triggered immediately after Gate 1.
             // Overall status stays PENDING until the student submits comprehension answers.
-            BuildComprehensionCheck check = comprehensionTriggerService.triggerFor(submission);
-            comprehensionCheckId = check.getId();
+            comprehensionCheckId = comprehensionCheck != null ? comprehensionCheck.getId() : null;
         }
 
         buildSubmissionRepository.save(submission);
@@ -156,8 +158,10 @@ public class BuildSubmitService {
         return BuildSubmitResponse.from(submission, gateDtos, comprehensionCheckId);
     }
 
-    private void runGates(BuildSubmission submission, List<BuildGateResult> gateResults,
-                          Build build, Stage stage, BuildSubmitRequest request) {
+    private BuildComprehensionCheck runGates(BuildSubmission submission, List<BuildGateResult> gateResults,
+                                              Build build, Stage stage, BuildSubmitRequest request) {
+
+        BuildComprehensionCheck comprehensionCheck = null;
 
         // Gate 1 — Judge0 against hidden test suite (same config as Drill execution).
         // Hidden test content is NEVER included in any feedback returned to the student.
@@ -177,6 +181,18 @@ public class BuildSubmitService {
         }
         submission.setGate1Passed(gate1Passed);
         buildSubmissionRepository.saveAndFlush(submission);
+
+        if (gate1Passed) {
+            // Judge0 returned status 3 (Accepted) — generate comprehension questions immediately.
+            // Questions reference the student's specific code: variable names, function names,
+            // data structures, and architectural choices. Called fresh per attempt so
+            // questions differ across retries.
+            try {
+                comprehensionCheck = comprehensionTriggerService.triggerFor(submission);
+            } catch (Exception e) {
+                log.error("Comprehension trigger failed for submission {}: {}", submission.getId(), e.getMessage());
+            }
+        }
 
         // Gate 2 — Student's own test suite executed via Judge0.
         // Static quality checks (empty, trivial, Cadet minimum) run first to avoid
@@ -236,8 +252,17 @@ public class BuildSubmitService {
         submission.setOverallScore(cleanCodeScore);
         buildSubmissionRepository.saveAndFlush(submission);
 
-        // Gates 4–5 (ARCHITECTURE, COMPETENCY_SIGNAL) run after Gate 4 comprehension passes.
+        // ARCHITECTURE and COMPETENCY_SIGNAL run after comprehension passes.
         // They are deferred to future gate tickets and not executed here.
+
+        return comprehensionCheck;
+    }
+
+    private void expireComprehensionCheck(BuildComprehensionCheck check) {
+        if (check != null) {
+            check.setStatus(BuildComprehensionCheckStatus.EXPIRED);
+            buildComprehensionCheckRepository.save(check);
+        }
     }
 
     private List<BuildGateResult> initGateResults(BuildSubmission submission) {

@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.Optional;
 
 @Repository
@@ -44,4 +45,12 @@ public interface DrillCompletionRepository extends JpaRepository<DrillCompletion
            nativeQuery = true)
     long countPassedDrillsForStage(@Param("studentId") Long studentId,
                                    @Param("stageName") String stageName);
+
+    @Query("SELECT COUNT(dc) FROM DrillCompletion dc " +
+           "WHERE dc.student.id = :studentId " +
+           "AND dc.comprehensionPassed = true " +
+           "AND dc.completedAt >= :startedAt AND dc.completedAt <= :endedAt")
+    int countPassedInWindow(@Param("studentId") Long studentId,
+                            @Param("startedAt") Instant startedAt,
+                            @Param("endedAt") Instant endedAt);
 }

@@ -19,8 +19,8 @@ public class Judge0Client {
 
     public Judge0Client(RestTemplateBuilder builder, Judge0Properties props) {
         this.restTemplate = builder
-                .connectTimeout(Duration.ofSeconds(5))
-                .readTimeout(Duration.ofSeconds(15))
+                .setConnectTimeout(Duration.ofSeconds(5))
+                .setReadTimeout(Duration.ofSeconds(15))
                 .build();
         this.props = props;
     }

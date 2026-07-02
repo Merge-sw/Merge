@@ -27,25 +27,14 @@ public class ProgressionServiceImpl implements ProgressionService {
         this.studentRepository = studentRepository;
     }
 
-    /**
-     * Awards XP atomically:
-     *
-     *   BEGIN TRANSACTION (or joins caller's transaction)
-     *   SELECT total_xp FROM students WHERE id = ? FOR UPDATE   ← pessimistic write lock
-     *   sum xp_entries for (student, stageType, activityType)
-     *   actualAward = MIN(amount, remainingCap)
-     *   INSERT INTO xp_entries
-     *   UPDATE students.total_xp
-     *   COMMIT
-     */
     @Override
     @Transactional
     public XpAwardResult awardXp(Long studentId, int amount, ActivityType activityType,
-                                 String stageType, Long sourceId) {
-        // Pessimistic write lock: prevents concurrent XP awards from double-counting.
-        // Hibernate executes SELECT … FOR UPDATE; merges fresh total_xp into the session.
+                                 String stageType, Long sourceId, double decayRate) {
         Student student = studentRepository.findByIdForUpdate(studentId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found: " + studentId));
+
+        int decayed = (int)(amount * decayRate);
 
         // Read cap from xp_caps table. No row = uncapped (Integer.MAX_VALUE).
         int cap = xpCapRepository
@@ -61,8 +50,8 @@ public class ProgressionServiceImpl implements ProgressionService {
             return XpAwardResult.atCap();
         }
 
-        int actual = Math.min(amount, remaining);
-        boolean capped = actual < amount;
+        int actual = Math.min(decayed, remaining);
+        boolean capped = actual < decayed;
 
         XpEntry entry = new XpEntry();
         entry.setStudent(student);

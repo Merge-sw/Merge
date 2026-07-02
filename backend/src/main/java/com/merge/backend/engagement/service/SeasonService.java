@@ -9,4 +9,5 @@ public interface SeasonService {
     Season createSeason(String name, Instant startDate, Instant endDate, boolean active);
     Season closeSeason(Long id);
     List<Season> getAllSeasons();
+    void lockSeasonAndAwardBadges(Long seasonId);
 }

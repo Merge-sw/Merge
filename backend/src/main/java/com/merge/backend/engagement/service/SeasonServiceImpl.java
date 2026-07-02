@@ -1,8 +1,14 @@
 package com.merge.backend.engagement.service;
 
 import com.merge.backend.engagement.domain.Season;
+import com.merge.backend.engagement.domain.SeasonBadge;
+import com.merge.backend.engagement.repository.SeasonBadgeRepository;
 import com.merge.backend.engagement.repository.SeasonRepository;
 import com.merge.backend.engagement.repository.WeeklyMomentumRepository;
+import com.merge.backend.identity.domain.Student;
+import com.merge.backend.identity.repository.StudentRepository;
+import com.merge.backend.progression.domain.ActivityType;
+import com.merge.backend.progression.service.ProgressionService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,11 +23,20 @@ public class SeasonServiceImpl implements SeasonService {
 
     private final SeasonRepository seasonRepository;
     private final WeeklyMomentumRepository weeklyMomentumRepository;
+    private final StudentRepository studentRepository;
+    private final SeasonBadgeRepository seasonBadgeRepository;
+    private final ProgressionService progressionService;
 
     public SeasonServiceImpl(SeasonRepository seasonRepository,
-                             WeeklyMomentumRepository weeklyMomentumRepository) {
+                             WeeklyMomentumRepository weeklyMomentumRepository,
+                             StudentRepository studentRepository,
+                             SeasonBadgeRepository seasonBadgeRepository,
+                             ProgressionService progressionService) {
         this.seasonRepository = seasonRepository;
         this.weeklyMomentumRepository = weeklyMomentumRepository;
+        this.studentRepository = studentRepository;
+        this.seasonBadgeRepository = seasonBadgeRepository;
+        this.progressionService = progressionService;
     }
 
     @Override
@@ -68,5 +83,65 @@ public class SeasonServiceImpl implements SeasonService {
     @Override
     public List<Season> getAllSeasons() {
         return seasonRepository.findAll();
+    }
+
+    @Override
+    public void lockSeasonAndAwardBadges(Long seasonId) {
+        // 1. Close/lock the season
+        Season season = closeSeason(seasonId);
+
+        // 2. Fetch all students
+        List<Student> students = studentRepository.findAll();
+        if (students.isEmpty()) {
+            return;
+        }
+
+        // 3. Sort students by total XP descending
+        List<Student> sorted = students.stream()
+                .sorted((s1, s2) -> s2.getTotalXp().compareTo(s1.getTotalXp()))
+                .toList();
+
+        int totalStudents = sorted.size();
+
+        // 4. Calculate rank, percentile, and award badges/XP
+        for (int i = 0; i < totalStudents; i++) {
+            Student student = sorted.get(i);
+            int rank = i + 1;
+            double percentile = (double) rank / totalStudents;
+
+            String badgeType = null;
+            int xpAward = 0;
+
+            if (percentile <= 0.10) {
+                badgeType = "GOLD";
+                xpAward = 200;
+            } else if (percentile <= 0.25) {
+                badgeType = "SILVER";
+                xpAward = 100;
+            }
+
+            if (badgeType != null) {
+                // Insert season badge record
+                SeasonBadge badge = new SeasonBadge();
+                badge.setStudent(student);
+                badge.setSeason(season);
+                badge.setBadgeType(badgeType);
+                badge.setRank(rank);
+                badge.setPercentile(percentile);
+                badge.setXpAwarded(xpAward);
+                badge.setAwardedAt(Instant.now());
+                seasonBadgeRepository.save(badge);
+
+                // Award XP via progression service
+                progressionService.awardXp(
+                        student.getId(),
+                        xpAward,
+                        ActivityType.SEASON_RANKING,
+                        student.getCurrentStage(),
+                        seasonId,
+                        1.0
+                );
+            }
+        }
     }
 }

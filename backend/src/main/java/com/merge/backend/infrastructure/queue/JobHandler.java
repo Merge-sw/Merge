@@ -2,7 +2,7 @@ package com.merge.backend.infrastructure.queue;
 
 /**
  * Implemented by each module that processes a specific JobType.
- * The dispatcher looks up the matching handler at runtime.
+ * Register as a Spring bean; the dispatcher discovers all implementations automatically.
  */
 public interface JobHandler {
     JobType jobType();

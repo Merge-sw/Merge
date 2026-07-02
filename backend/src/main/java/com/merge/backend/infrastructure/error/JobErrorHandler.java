@@ -3,6 +3,7 @@ package com.merge.backend.infrastructure.error;
 import com.merge.backend.infrastructure.queue.DeadLetterQueueService;
 import com.merge.backend.infrastructure.queue.JobCriticality;
 import com.merge.backend.infrastructure.queue.JobPayload;
+import com.merge.backend.infrastructure.worker.FinalFailureHandler;
 import io.sentry.SentryLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +17,7 @@ import org.springframework.stereotype.Component;
  * SCHEDULED         → ERROR log only (job recurs on schedule; no DLQ, no Sentry)
  */
 @Component
-public class JobErrorHandler {
+public class JobErrorHandler implements FinalFailureHandler {
 
     private static final Logger log = LoggerFactory.getLogger(JobErrorHandler.class);
 

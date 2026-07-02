@@ -1,6 +1,5 @@
 package com.merge.backend.infrastructure.worker;
 
-import com.merge.backend.infrastructure.error.JobErrorHandler;
 import com.merge.backend.infrastructure.queue.JobHandler;
 import com.merge.backend.infrastructure.queue.JobPayload;
 import com.merge.backend.infrastructure.queue.JobQueueService;
@@ -8,8 +7,6 @@ import com.merge.backend.infrastructure.queue.JobType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -18,13 +15,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Polls the main queue, dispatches to the correct JobHandler, and manages
- * exponential-backoff retries. Hands finally-failed jobs to JobErrorHandler.
+ * Executes a single job and manages its retry lifecycle.
+ * Polling is handled externally by {@link QueueWorkerPool} — one thread per concurrency slot.
  *
- * Retry backoff: baseBackoffMs * 2^(attempt - 1), capped at 5 minutes.
+ * Retry backoff: baseBackoffMs * 2^(attempt-1), capped at 5 minutes.
+ * Final failure is delegated to the JobErrorHandler (wired by INF-02).
  */
 @Component
-@EnableScheduling
 public class JobDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(JobDispatcher.class);
@@ -34,14 +31,19 @@ public class JobDispatcher {
     private long baseBackoffMs;
 
     private final JobQueueService jobQueue;
-    private final JobErrorHandler errorHandler;
     private final Map<JobType, JobHandler> handlers;
 
+    /**
+     * finalFailureHandler is optional here — it is provided by INF-02.
+     * If absent, final failures are logged only.
+     */
+    private final FinalFailureHandler finalFailureHandler;
+
     public JobDispatcher(JobQueueService jobQueue,
-                         JobErrorHandler errorHandler,
-                         List<JobHandler> handlerBeans) {
+                         List<JobHandler> handlerBeans,
+                         FinalFailureHandler finalFailureHandler) {
         this.jobQueue = jobQueue;
-        this.errorHandler = errorHandler;
+        this.finalFailureHandler = finalFailureHandler;
 
         Map<JobType, JobHandler> map = new EnumMap<>(JobType.class);
         for (JobHandler h : handlerBeans) {
@@ -50,20 +52,13 @@ public class JobDispatcher {
         this.handlers = map;
     }
 
-    /** Promotes delayed-retry jobs that are now due back onto the main queue. */
-    @Scheduled(fixedDelayString = "${job.queue.poll-interval-ms:500}")
-    public void promoteRetries() {
-        jobQueue.promoteReadyRetries();
-    }
-
-    /** Drains one job per tick from the main queue. */
-    @Scheduled(fixedDelayString = "${job.queue.poll-interval-ms:500}")
-    public void poll() {
-        JobPayload job = jobQueue.poll();
-        if (job == null) return;
-
+    /**
+     * Processes one job: invokes its handler, schedules a retry on failure,
+     * or delegates to the final-failure handler when attempts are exhausted.
+     */
+    public void process(JobPayload job) {
         job.setLastAttemptAt(Instant.now());
-        log.debug("[JobDispatcher] Dequeued type={} jobId={} attempt={}",
+        log.debug("[JobDispatcher] Processing type={} jobId={} attempt={}",
                 job.getJobType(), job.getJobId(), job.getAttemptCount() + 1);
 
         try {
@@ -83,11 +78,13 @@ public class JobDispatcher {
 
             if (maxAttempts > 0 && attempt < maxAttempts) {
                 long delay = Math.min(baseBackoffMs * (1L << (attempt - 1)), MAX_BACKOFF_MS);
-                log.warn("[JobDispatcher] Retrying type={} jobId={} attempt={}/{} in {}ms",
+                log.warn("[JobDispatcher] Scheduling retry type={} jobId={} attempt={}/{} in {}ms",
                         job.getJobType(), job.getJobId(), attempt, maxAttempts, delay);
                 jobQueue.scheduleRetry(job, delay);
             } else {
-                errorHandler.onFinalFailure(job, ex);
+                log.error("[JobDispatcher] Final failure type={} jobId={} attempts={}",
+                        job.getJobType(), job.getJobId(), attempt, ex);
+                finalFailureHandler.onFinalFailure(job, ex);
             }
         }
     }

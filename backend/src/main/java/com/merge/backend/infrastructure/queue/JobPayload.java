@@ -1,8 +1,8 @@
 package com.merge.backend.infrastructure.queue;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 
 import java.time.Instant;
 

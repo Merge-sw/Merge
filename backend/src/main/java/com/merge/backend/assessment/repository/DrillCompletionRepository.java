@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+
 @Repository
 public interface DrillCompletionRepository extends JpaRepository<DrillCompletion, Long> {
 
@@ -23,4 +25,7 @@ public interface DrillCompletionRepository extends JpaRepository<DrillCompletion
 
     /** Used to gate Drill 2: returns true if student has passed comprehension on a specific drill. */
     boolean existsByStudentIdAndDrillIdAndComprehensionPassedTrue(Long studentId, Long drillId);
+
+    /** Used before creating a new completion record to avoid duplicates. */
+    Optional<DrillCompletion> findByStudentIdAndDrillId(Long studentId, Long drillId);
 }

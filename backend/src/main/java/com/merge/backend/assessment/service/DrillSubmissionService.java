@@ -5,6 +5,8 @@ import com.merge.backend.assessment.domain.DrillSubmission;
 import com.merge.backend.assessment.domain.DrillSubmissionStatus;
 import com.merge.backend.assessment.dto.DrillSubmitRequest;
 import com.merge.backend.assessment.dto.DrillSubmitResponse;
+import com.merge.backend.assessment.judge0.Judge0ExecutionService;
+import com.merge.backend.assessment.judge0.Judge0Outcome;
 import com.merge.backend.assessment.repository.CodeReadingSubmissionRepository;
 import com.merge.backend.assessment.repository.DrillCompletionRepository;
 import com.merge.backend.assessment.repository.DrillRepository;
@@ -31,34 +33,45 @@ public class DrillSubmissionService {
     private final CodeReadingSubmissionRepository codeReadingSubmissionRepository;
     private final ConceptUnlockRepository conceptUnlockRepository;
     private final StudentRepository studentRepository;
+    private final Judge0ExecutionService judge0ExecutionService;
 
     public DrillSubmissionService(DrillRepository drillRepository,
                                   DrillSubmissionRepository submissionRepository,
                                   DrillCompletionRepository drillCompletionRepository,
                                   CodeReadingSubmissionRepository codeReadingSubmissionRepository,
                                   ConceptUnlockRepository conceptUnlockRepository,
-                                  StudentRepository studentRepository) {
+                                  StudentRepository studentRepository,
+                                  Judge0ExecutionService judge0ExecutionService) {
         this.drillRepository = drillRepository;
         this.submissionRepository = submissionRepository;
         this.drillCompletionRepository = drillCompletionRepository;
         this.codeReadingSubmissionRepository = codeReadingSubmissionRepository;
         this.conceptUnlockRepository = conceptUnlockRepository;
         this.studentRepository = studentRepository;
+        this.judge0ExecutionService = judge0ExecutionService;
     }
 
     /**
-     * Validates and records a drill submission.
+     * Validates, records, and executes a drill submission through Judge0.
      *
      * Order of checks (stops at first failure):
-     * 1. 400 — input validation (code, testSuite, architectureAnswers)
+     * 1. 400 — input validation (code, testSuite, architectureAnswers, idempotencyKey)
      * 2. 409 — duplicate idempotency key (returns original submission)
      * 3. 404 — drill not found
      * 4. 403 — student does not own this drill
      * 5. 403 — drill is locked (concept not unlocked, or Drill 2 prerequisites not met)
      *
-     * Judge0 execution is async and handled downstream; this endpoint saves with PENDING status.
+     * Judge0 status mapping after execution:
+     *   3 = accepted → 200, testsPassed: true  (comprehension check follows)
+     *   4 = wrong answer → 200, testsPassed: false
+     *   5 = timeout → 408
+     *   6 = compilation error → 400 with stderr
+     *   11+ = runtime error → 400
+     *
+     * noRollbackFor ensures the submission row (with updated status + stderr) is always committed,
+     * even when we throw a ResponseStatusException for error cases.
      */
-    @Transactional
+    @Transactional(noRollbackFor = ResponseStatusException.class)
     public DrillSubmitResponse submit(Long drillId, DrillSubmitRequest req, String studentEmail) {
         validate(req);
 
@@ -93,7 +106,23 @@ public class DrillSubmissionService {
         submission.setStatus(DrillSubmissionStatus.PENDING);
         submission.setSubmittedAt(Instant.now());
 
-        return DrillSubmitResponse.from(submissionRepository.save(submission));
+        // Flush to DB before calling Judge0 so the row exists if the process is interrupted
+        submission = submissionRepository.saveAndFlush(submission);
+
+        Judge0Outcome outcome = judge0ExecutionService.execute(req.code(), req.testSuite());
+
+        // Update submission with Judge0 result — committed even if we throw below (noRollbackFor)
+        submission.setStderr(outcome.stderr());
+        switch (outcome.statusId()) {
+            case 3 -> submission.setStatus(DrillSubmissionStatus.JUDGE0_PASS);
+            case 4 -> submission.setStatus(DrillSubmissionStatus.JUDGE0_FAIL);
+            default -> submission.setStatus(DrillSubmissionStatus.JUDGE0_FAIL);
+        }
+        submission = submissionRepository.save(submission);
+
+        mapOutcomeToHttpException(outcome);
+
+        return DrillSubmitResponse.from(submission, outcome.testsPassed());
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -155,6 +184,23 @@ public class DrillSubmissionService {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                         "Code reading must be submitted before accessing Drill 2");
             }
+        }
+    }
+
+    /**
+     * Translates a Judge0 terminal status into the appropriate HTTP exception.
+     * Called after status has already been persisted to the DB.
+     * Status 3 (accepted) and 4 (wrong answer) are both 200 — no exception thrown.
+     */
+    private void mapOutcomeToHttpException(Judge0Outcome outcome) {
+        switch (outcome.statusId()) {
+            case 3, 4 -> { /* 200 — fall through */ }
+            case 5 -> throw new ResponseStatusException(HttpStatus.REQUEST_TIMEOUT,
+                    "Execution exceeded the 2-second time limit");
+            case 6 -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Compilation error: " + outcome.stderr());
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Runtime error — check your code for unhandled exceptions");
         }
     }
 }

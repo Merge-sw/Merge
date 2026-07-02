@@ -1,23 +1,31 @@
 package com.merge.backend.assessment.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.merge.backend.ai.gateway.GeminiGateway;
 import com.merge.backend.assessment.domain.BuildComprehensionCheck;
 import com.merge.backend.assessment.domain.BuildComprehensionCheckStatus;
 import com.merge.backend.assessment.domain.BuildGate;
 import com.merge.backend.assessment.domain.BuildGateResult;
 import com.merge.backend.assessment.domain.BuildGateStatus;
+import com.merge.backend.assessment.domain.BuildPassTier;
 import com.merge.backend.assessment.domain.BuildSubmission;
 import com.merge.backend.assessment.domain.BuildSubmissionStatus;
 import com.merge.backend.assessment.dto.BuildCompetencySignalRequest;
 import com.merge.backend.assessment.dto.BuildComprehensionScoreRequest;
 import com.merge.backend.assessment.dto.BuildComprehensionSubmitRequest;
 import com.merge.backend.assessment.dto.BuildComprehensionSubmitResponse;
+import com.merge.backend.assessment.dto.BuildGateResultDto;
+import com.merge.backend.assessment.dto.CompetencySignalJobPayload;
+import com.merge.backend.assessment.dto.GithubCommitJobPayload;
 import com.merge.backend.assessment.exception.BuildComprehensionTimerExpiredException;
 import com.merge.backend.assessment.repository.BuildComprehensionCheckRepository;
 import com.merge.backend.assessment.repository.BuildGateResultRepository;
 import com.merge.backend.assessment.repository.BuildSubmissionRepository;
 import com.merge.backend.identity.domain.Student;
 import com.merge.backend.identity.repository.StudentRepository;
+import com.merge.backend.infrastructure.queue.JobQueueService;
+import com.merge.backend.infrastructure.queue.JobType;
 import com.merge.backend.progression.domain.ActivityType;
 import com.merge.backend.progression.service.ProgressionService;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +51,8 @@ public class BuildComprehensionSubmitService {
     private final StudentRepository studentRepository;
     private final GeminiGateway geminiGateway;
     private final ProgressionService progressionService;
+    private final JobQueueService jobQueueService;
+    private final ObjectMapper objectMapper;
 
     @Transactional(noRollbackFor = BuildComprehensionTimerExpiredException.class)
     public BuildComprehensionSubmitResponse submit(Long checkId,
@@ -96,7 +106,9 @@ public class BuildComprehensionSubmitService {
         checkRepository.save(check);
 
         BuildSubmission submission = check.getBuildSubmission();
-        boolean passed = geminiGateway.scoreBuildComprehensionAnswers(
+
+        // ── Gate 4: comprehension scoring ─────────────────────────────────────
+        boolean comprehensionPassed = geminiGateway.scoreBuildComprehensionAnswers(
                 new BuildComprehensionScoreRequest(
                         submission.getCode(),
                         submission.getArchitectureDocument(),
@@ -105,25 +117,28 @@ public class BuildComprehensionSubmitService {
                         answers
                 ));
 
-        if (!passed) {
+        if (!comprehensionPassed) {
+            // Gates 1+2+3 passed (comprehension was triggered) but gate 4 failed.
+            // Student still earns MINIMUM tier — gates 1+2 are the base requirement.
             check.setStatus(BuildComprehensionCheckStatus.FAILED);
             checkRepository.save(check);
-            submission.setOverallStatus(BuildSubmissionStatus.FAILED);
-            buildSubmissionRepository.save(submission);
-            return BuildComprehensionSubmitResponse.failed();
+            return awardTierAndReturn(submission, student, BuildPassTier.MINIMUM, false);
         }
 
         check.setStatus(BuildComprehensionCheckStatus.PASSED);
         checkRepository.save(check);
-
         submission.setGate4Passed(true);
 
-        // Gate 5 — SFIA competency signal: runs immediately after gate 4 passes.
-        // AI evaluates both code and architecture document against the SFIA skill descriptors
-        // declared in build.sfia_competencies. Pass requires evidence in both artefacts.
-        BuildGateResult competencyResult = new BuildGateResult();
-        competencyResult.setBuildSubmission(submission);
-        competencyResult.setGate(BuildGate.COMPETENCY_SIGNAL);
+        // ── Gate 5: SFIA competency signal ────────────────────────────────────
+        // Reuse the PENDING row created by initGateResults — never create a second row.
+        BuildGateResult competencyResult = buildGateResultRepository
+                .findByBuildSubmissionIdAndGate(submission.getId(), BuildGate.COMPETENCY_SIGNAL)
+                .orElseGet(() -> {
+                    BuildGateResult r = new BuildGateResult();
+                    r.setBuildSubmission(submission);
+                    r.setGate(BuildGate.COMPETENCY_SIGNAL);
+                    return r;
+                });
 
         boolean competencyPassed;
         try {
@@ -149,24 +164,55 @@ public class BuildComprehensionSubmitService {
         buildGateResultRepository.save(competencyResult);
 
         if (!competencyPassed) {
+            // Gates 1+2+3+4 passed, gate 5 failed → STANDARD tier.
             submission.setGate5Passed(false);
-            submission.setOverallStatus(BuildSubmissionStatus.FAILED);
-            buildSubmissionRepository.save(submission);
-            return BuildComprehensionSubmitResponse.failed();
+            return awardTierAndReturn(submission, student, BuildPassTier.STANDARD, true);
         }
 
+        // All 5 gates passed → DISTINCTION tier.
         submission.setGate5Passed(true);
-        submission.setOverallStatus(BuildSubmissionStatus.PASSED);
-        int awarded = progressionService.awardXp(
-                student,
-                submission.getPendingXp(),
+        return awardTierAndReturn(submission, student, BuildPassTier.DISTINCTION, true);
+    }
+
+    private BuildComprehensionSubmitResponse awardTierAndReturn(
+            BuildSubmission submission, Student student, BuildPassTier tier,
+            boolean comprehensionPassed) {
+
+        int xp = progressionService.awardXp(student,
+                tier.computeXp(submission.getAttemptNumber()),
                 ActivityType.BUILD_PASS,
                 submission.getBuild().getStageName(),
-                submission.getBuild().getId()
-        );
-        submission.setXpAwarded(awarded);
+                submission.getBuild().getId());
+
+        submission.setTier(tier.name());
+        submission.setXpAwarded(xp);
+        submission.setOverallStatus(BuildSubmissionStatus.PASSED);
         buildSubmissionRepository.save(submission);
 
-        return BuildComprehensionSubmitResponse.passed(awarded);
+        enqueuePassJobs(submission);
+
+        List<BuildGateResultDto> gates = buildGateResultRepository
+                .findByBuildSubmissionIdOrderByGateAsc(submission.getId())
+                .stream().map(BuildGateResultDto::from).toList();
+
+        return new BuildComprehensionSubmitResponse(comprehensionPassed, xp, tier.name(), gates);
+    }
+
+    private void enqueuePassJobs(BuildSubmission submission) {
+        try {
+            String githubPayload = objectMapper.writeValueAsString(
+                    new GithubCommitJobPayload(submission.getId(),
+                            submission.getStudent().getId(),
+                            submission.getBuild().getId()));
+            jobQueueService.enqueue(JobType.GITHUB_COMMIT, githubPayload);
+
+            String competencyPayload = objectMapper.writeValueAsString(
+                    new CompetencySignalJobPayload(submission.getId(),
+                            submission.getStudent().getId(),
+                            submission.getBuild().getId()));
+            jobQueueService.enqueue(JobType.COMPETENCY_SIGNAL, competencyPayload);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to enqueue pass jobs for submission {}: {}", submission.getId(), e.getMessage());
+        }
     }
 }

@@ -142,3 +142,18 @@ ON CONFLICT (stage_name, sequence_order) DO NOTHING;
 -- SELECT id, stage_name, sequence_order, name FROM concepts
 -- WHERE stage_name = 'CADET'
 -- ORDER BY sequence_order;
+
+-- -----------------------------------------------------------------------------
+-- XP CAPS  — per-stage, per-activity maximum cumulative XP
+-- activity_type values must match ActivityType enum names (stored via @Enumerated STRING).
+-- A missing row means uncapped for that stage+activity combination.
+-- -----------------------------------------------------------------------------
+INSERT INTO xp_caps (stage_name, activity_type, cap_amount)
+VALUES
+    ('CADET', 'LEARNING_RESOURCE',   50),
+    ('CADET', 'DRILL_1',            100),
+    ('CADET', 'DRILL_2',            200),
+    ('CADET', 'WEEKLY_CONSISTENCY', 150),
+    ('CADET', 'SEASON_RANKING',     200),
+    ('CADET', 'BUILD',              500)
+ON CONFLICT (stage_name, activity_type) DO NOTHING;

@@ -37,6 +37,20 @@ public class XpEntry {
     @Column(name = "source_id")
     private Long sourceId;
 
+    /**
+     * SFIA skill code associated with this XP award (e.g. "PROG", "TEST").
+     * Populated by the COMPETENCY_SIGNAL job for BUILD_PASS entries; null for other activity types.
+     */
+    @Column(name = "sfia_skill", length = 30)
+    private String sfiaSkill;
+
+    /**
+     * SFIA skill level at which this XP was earned (derived from stage: CADET→2, ENGINEER→3, etc.).
+     * Populated by the COMPETENCY_SIGNAL job for BUILD_PASS entries; null for other activity types.
+     */
+    @Column(name = "sfia_level", length = 20)
+    private String sfiaLevel;
+
     @Column(name = "earned_at", nullable = false)
     private Instant earnedAt;
 }

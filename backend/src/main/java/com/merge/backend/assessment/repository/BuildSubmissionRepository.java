@@ -13,6 +13,16 @@ public interface BuildSubmissionRepository extends JpaRepository<BuildSubmission
 
     Optional<BuildSubmission> findByIdempotencyKey(String idempotencyKey);
 
+    /** Gate 3 (AI-07 clean-code) scores for all prior attempts on builds in the given stage. */
+    @Query("SELECT bs.overallScore FROM BuildSubmission bs " +
+           "WHERE bs.student.id = :studentId " +
+           "AND bs.build.stageName = :stageName " +
+           "AND bs.overallScore IS NOT NULL " +
+           "ORDER BY bs.submittedAt ASC")
+    java.util.List<Integer> findCleanCodeScoresByStudentAndStage(
+            @Param("studentId") Long studentId,
+            @Param("stageName") String stageName);
+
     /** Counts previous submissions to determine the next attempt_number. */
     int countByStudentIdAndBuildId(Long studentId, Long buildId);
 

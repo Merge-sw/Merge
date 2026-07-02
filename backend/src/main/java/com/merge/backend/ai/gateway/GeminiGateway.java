@@ -5,6 +5,8 @@ import com.merge.backend.assessment.dto.BuildCleanCodeReviewRequest;
 import com.merge.backend.assessment.dto.BuildCompetencySignalRequest;
 import com.merge.backend.assessment.dto.BuildComprehensionQuestionsRequest;
 import com.merge.backend.assessment.dto.BuildComprehensionScoreRequest;
+import com.merge.backend.assessment.dto.BuildPrdGenerationRequest;
+import com.merge.backend.assessment.dto.BuildPrdResult;
 import com.merge.backend.assessment.dto.BuildTestQualityRequest;
 import com.merge.backend.assessment.dto.CleanCodeReviewResult;
 import com.merge.backend.assessment.dto.ComprehensionQuestion;
@@ -39,6 +41,14 @@ public interface GeminiGateway {
      * @return the generated explanation text (plain prose, no Markdown headers)
      */
     String generateConceptExplanation(ConceptExplanationRequest request);
+
+    /**
+     * AI-03 — BuildPrdWriter prompt: generates a personalised Product Requirements Document
+     * calibrated to the student's specific Drill performance history across the stage.
+     * Targets identified weak concepts and coding patterns so the challenge closes real gaps.
+     * Also produces a hidden test suite, ordered requirements, constraints, and SFIA competency tags.
+     */
+    BuildPrdResult generateBuildPrd(BuildPrdGenerationRequest request);
 
     /**
      * AI-02 — DrillWriter prompt: generates Drill 1 and Drill 2 for a concept,
